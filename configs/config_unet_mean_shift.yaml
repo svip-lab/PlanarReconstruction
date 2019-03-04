@@ -1,0 +1,21 @@
+seed: 123
+num_gpus: 1
+num_epochs: 100
+resume_dir: None
+print_interval: 10
+
+solver:
+  method: adam
+  lr: 0.0001
+  weight_decay: 0.00001
+
+dataset:
+  root_dir: /new_disk2/yuzh/PlaneNetData/
+  batch_size: 16
+  num_workers: 8
+
+model:
+  arch: resnet101
+  pretrained: True
+  embed_dims: 2
+  fix_bn: False
