@@ -4,7 +4,5 @@ imageio
 scipy
 argparse
 tensorflow
-PIL
+Pillow 
 sacred
-tqdm
-
