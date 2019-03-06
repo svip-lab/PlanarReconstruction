@@ -33,6 +33,12 @@ To evaluate the performance of our method, please run:
 python main.py eval with dataset.root_dir=/path/to/save/processd/data resume_dir=pretrained.pt dataset.batch_size=1
 ```
 
+## Prediction
+Run the following command to predict on a single image.
+```bash
+python predict.py eval with resume_dir=pretrained.pt input_image=/path/to/image 
+```
+
 ## Acknowledgements
 We thank [Chen Liu](http://art-programmer.github.io/index.html) for his great works and repos.
 
