@@ -25,7 +25,7 @@ Run the following command to train our network.
 python main.py train with dataset.root_dir=/path/to/save/processd/data
 ```
 
-## Evaluatioin
+## Evaluation
 Please download our trained network from [here](https://drive.google.com/file/d/1Aa1Jb0CGpiYXKHeTwpXAwcwu_yEqdkte/view?usp=sharing).
 
 To evaluate the performance of our method, please run:
