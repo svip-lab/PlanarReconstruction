@@ -10,22 +10,38 @@ Zehao Yu\*, [Jia Zheng](https://bertjiazheng.github.io/)\*, [Dongze Lian](https:
 
 <img src="misc/pipeline.jpg" width="800">
 
-## Prepare data
-Please download the *.tfrecords* files for training and testing converted by [Chen Liu](http://art-programmer.github.io/index.html) from [here](https://github.com/art-programmer/PlaneNet). 
-Then convert the *.tfrecords* to *.npz* files as the following:
+## Getting Started
 
+### Installation
+
+Clone repository:
 ```bash
-python data_tools/convert_tfrecords.py --data_type=train --input_tfrecords_file=*train.tfrecords --output_dir=/path/to/save/processd/data
-python data_tools/convert_tfrecords.py --data_type=val --input_tfrecords_file=*val.tfrecords --output_dir=/path/to/save/processd/data
+git clone git@github.com:svip-lab/PlanarReconstruction.git
 ```
 
-## Train
+We use Python 3. Create an Anaconda enviroment and install the dependencies:
+```bash
+conda create -y -n plane python=3.6
+conda activate plane
+conda install -c menpo opencv
+pip install -r requirements.txt
+```
+
+### Downloading  convert data
+Please download the *.tfrecords* files for training and testing converted by [PlaneNet](https://github.com/art-programmer/PlaneNet). 
+Then convert the *.tfrecords* to *.npz* files as the following:
+```bash
+python data_tools/convert_tfrecords.py --data_type=train --input_tfrecords_file=/path/to/planes_scannet_train.tfrecords --output_dir=/path/to/save/processd/data
+python data_tools/convert_tfrecords.py --data_type=val --input_tfrecords_file=/path/to/planes_scannet_val.tfrecords --output_dir=/path/to/save/processd/data
+```
+
+### Training
 Run the following command to train our network. 
 ```bash
 python main.py train with dataset.root_dir=/path/to/save/processd/data
 ```
 
-## Evaluation
+### Evaluation
 Please download our trained network from [here](https://drive.google.com/file/d/1Aa1Jb0CGpiYXKHeTwpXAwcwu_yEqdkte/view?usp=sharing).
 
 To evaluate the performance of our method, please run:
@@ -33,7 +49,7 @@ To evaluate the performance of our method, please run:
 python main.py eval with dataset.root_dir=/path/to/save/processd/data resume_dir=pretrained.pt dataset.batch_size=1
 ```
 
-## Prediction
+### Prediction
 Run the following command to predict on a single image.
 ```bash
 python predict.py eval with resume_dir=pretrained.pt input_image=/path/to/image 
@@ -45,10 +61,11 @@ We thank [Chen Liu](http://art-programmer.github.io/index.html) for his great wo
 ## Citation
 Please cite our paper for any purpose of usage.
 ```
-@inproceedings{Yu2019Single,
-  title={Single-Image Piece-wise Planar 3D Reconstruction via Associative Embedding},
-  author={Zehao Yu and Jia Zheng and Dongze Lian and Zihan Zhou and Shenghua Gao},
-  booktitle={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
-  year={2019}
+@inproceedings{YuZLZG19,
+  author    = {Zehao Yu and Jia Zheng and Dongze Lian and Zihan Zhou and Shenghua Gao},
+  title     = {Single-Image Piece-wise Planar 3D Reconstruction via Associative Embedding},
+  booktitle = {CVPR},
+  pages     = {1029--1037},
+  year      = {2019}
 }
 ```
