@@ -27,9 +27,8 @@ conda install -c menpo opencv
 pip install -r requirements.txt
 ```
 
-### Downloading  convert data
-Please download the *.tfrecords* files for training and testing converted by [PlaneNet](https://github.com/art-programmer/PlaneNet). 
-Then convert the *.tfrecords* to *.npz* files as the following:
+### Downloading and converting data
+Please download the *.tfrecords* files for training and testing converted by [PlaneNet](https://github.com/art-programmer/PlaneNet), then convert the *.tfrecords* to *.npz* files:
 ```bash
 python data_tools/convert_tfrecords.py --data_type=train --input_tfrecords_file=/path/to/planes_scannet_train.tfrecords --output_dir=/path/to/save/processd/data
 python data_tools/convert_tfrecords.py --data_type=val --input_tfrecords_file=/path/to/planes_scannet_val.tfrecords --output_dir=/path/to/save/processd/data
