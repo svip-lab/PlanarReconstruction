@@ -72,10 +72,7 @@ def eval(_run, _log):
             #
             
             image = transforms(image)
-            if torch.cuda.is_available():
-                image = image.cuda().unsqueeze(0)
-            else:
-                image = image.unsqueeze(0)
+            image = image.to(device).unsqueeze(0)
 
             # forward pass
             logit, embedding, _, _, param = network(image)

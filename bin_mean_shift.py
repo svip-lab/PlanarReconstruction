@@ -36,10 +36,9 @@ class Bin_Mean_Shift(nn.Module):
         x_repeat = x.repeat(1, bin_num).view(-1, 1)
         y_repeat = y.repeat(bin_num, 1).view(-1, 1)
 
-        if torch.cuda.is_available():
-            return torch.cat((x_repeat, y_repeat), dim=1).cuda()
-        else:
-            return torch.cat((x_repeat, y_repeat), dim=1)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        return torch.cat((x_repeat, y_repeat), dim=1).to(device)
 
     def filter_seed(self, point, prob, seed_point, bandwidth, min_count=3):
         '''
@@ -102,10 +101,8 @@ class Bin_Mean_Shift(nn.Module):
         onehot = torch.zeros((n, label_num))
         onehot.scatter_(1, labels.long(), 1.)
 
-        if torch.cuda.is_available():
-            return onehot.cuda()
-        else:
-            return onehot
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        return onehot.to(device)
 
     def merge_center(self, seed_point, bandwidth=0.25):
         '''
