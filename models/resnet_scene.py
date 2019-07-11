@@ -226,6 +226,8 @@ def resnet101(pretrained=False, **kwargs):
 
 
 def load_url(url, map_location=None):
+    if not torch.cuda.is_available():
+        map_location='cpu'
     torch_home = os.path.expanduser(os.getenv('TORCH_HOME', '~/.torch'))
     model_dir = os.getenv('TORCH_MODEL_ZOO', os.path.join(torch_home, 'models'))
     if not os.path.exists(model_dir):

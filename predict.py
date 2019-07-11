@@ -48,7 +48,7 @@ def eval(_run, _log):
     network = UNet(cfg.model)
 
     if not cfg.resume_dir == 'None':
-        model_dict = torch.load(cfg.resume_dir)
+        model_dict = torch.load(cfg.resume_dir, None if torch.cuda.is_available() else 'cpu')
         network.load_state_dict(model_dict)
 
     # load nets into gpu
@@ -69,9 +69,14 @@ def eval(_run, _log):
             image = cv2.resize(image, (w, h))
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = Image.fromarray(image)
-            # 
+            #
+            
             image = transforms(image)
-            image = image.cuda().unsqueeze(0)
+            if torch.cuda.is_available():
+                image = image.cuda().unsqueeze(0)
+            else:
+                image = image.unsqueeze(0)
+
             # forward pass
             logit, embedding, _, _, param = network(image)
 
