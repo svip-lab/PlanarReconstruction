@@ -197,7 +197,7 @@ def train(_run, _log):
     network = UNet(cfg.model)
 
     if not cfg.resume_dir == 'None':
-        model_dict = torch.load(cfg.resume_dir)
+        model_dict = torch.load(cfg.resume_dir, None if torch.cuda.is_available() else 'cpu')
         network.load_state_dict(model_dict)
 
     # load nets into gpu
@@ -380,7 +380,7 @@ def eval(_run, _log):
     network = UNet(cfg.model)
 
     if not cfg.resume_dir == 'None':
-        model_dict = torch.load(cfg.resume_dir)
+        model_dict = torch.load(cfg.resume_dir, None if torch.cuda.is_available() else 'cpu')
         network.load_state_dict(model_dict)
 
     # load nets into gpu
@@ -526,7 +526,7 @@ def eval(_run, _log):
 
             #cv2.imshow('image', image)
             #cv2.waitKey(0)
-            #cv2.imwrite("%d_segmentation.png"%iter, image)
+            cv2.imwrite("%d_segmentation.png"%iter, image)
 
         print("========================================")
         print("pixel and plane recall of all test image")
