@@ -55,7 +55,8 @@ python predict.py eval with resume_dir=pretrained.pt input_image=/path/to/image
 ```
 
 ## Acknowledgements
-We thank [Chen Liu](http://art-programmer.github.io/index.html) for his great works and repos.
+* We thank [Chen Liu](http://art-programmer.github.io/index.html) for his great works and repos.
+* If you do not have GPU devices, please refer to [tomhog](https://github.com/tomhog/PlanarReconstruction) for CPU support.
 
 ## Citation
 Please cite our paper for any purpose of usage.
