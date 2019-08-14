@@ -1,0 +1,12 @@
+seed: 123
+num_gpus: 1
+num_epochs: 100
+resume_dir: None
+print_interval: 10
+image_path: 0000001.jpg
+
+model:
+  arch: resnet101
+  pretrained: False
+  embed_dims: 2
+  fix_bn: False

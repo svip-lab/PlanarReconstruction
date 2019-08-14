@@ -19,6 +19,3 @@ model:
   pretrained: True
   embed_dims: 2
   fix_bn: False
-
-input_image: 0000001.jpg
-

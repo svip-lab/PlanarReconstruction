@@ -5,20 +5,21 @@ import numpy as np
 
 
 class Bin_Mean_Shift(nn.Module):
-    def __init__(self, train_iter=5, test_iter=10, bandwidth=0.5):
+    def __init__(self, train_iter=5, test_iter=10, bandwidth=0.5, device='cpu'):
         super(Bin_Mean_Shift, self).__init__()
         self.train_iter = train_iter
         self.test_iter = test_iter
         self.bandwidth = bandwidth / 2.
         self.anchor_num = 10
         self.sample_num = 3000
+        self.device = device
 
     def generate_seed(self, point, bin_num):
-        '''
+        """
         :param point: tensor of size (K, 2)
         :param bin_num: int
         :return: seed_point
-        '''
+        """
         def get_start_end(a, b, k):
             start = a + (b - a) / ((k + 1) * 2)
             end = b - (b - a) / ((k + 1) * 2)
@@ -36,17 +37,17 @@ class Bin_Mean_Shift(nn.Module):
         x_repeat = x.repeat(1, bin_num).view(-1, 1)
         y_repeat = y.repeat(bin_num, 1).view(-1, 1)
 
-        return torch.cat((x_repeat, y_repeat), dim=1).cuda()
+        return torch.cat((x_repeat, y_repeat), dim=1).to(self.device)
 
     def filter_seed(self, point, prob, seed_point, bandwidth, min_count=3):
-        '''
+        """
         :param point: tensor of size (K, 2)
         :param seed_point: tensor of size (n, 2)
         :param prob: tensor of size (K, 1) indicate probability of being plane
         :param min_count:  mini_count within a bandwith of seed point
         :param bandwidth: float
         :return: filtered_seed_points
-        '''
+        """
         distance_matrix = self.cal_distance_matrix(seed_point, point)  # (n, K)
         thres_matrix = (distance_matrix < bandwidth).type(torch.float32) * prob.t()
         count = thres_matrix.sum(dim=1)                  # (n, 1)
@@ -54,29 +55,29 @@ class Bin_Mean_Shift(nn.Module):
         return seed_point[valid]
 
     def cal_distance_matrix(self, point_a, point_b):
-        '''
+        """
         :param point_a: tensor of size (m, 2)
         :param point_b: tensor of size (n, 2)
         :return: distance matrix of size (m, n)
-        '''
+        """
         m, n = point_a.size(0), point_b.size(0)
 
         a_repeat = point_a.repeat(1, n).view(n * m, 2)                  # (n*m, 2)
-        b_repeat = point_b.repeat(m, 1)                                  # (n*m, 2)
+        b_repeat = point_b.repeat(m, 1)                                 # (n*m, 2)
 
         distance = torch.nn.PairwiseDistance(keepdim=True)(a_repeat, b_repeat)  # (n*m, 1)
 
         return distance.view(m, n)
 
     def shift(self, point, prob, seed_point, bandwidth):
-        '''
+        """
         shift seed points
         :param point: tensor of size (K, 2)
         :param seed_point: tensor of size (n, 2)
         :param prob: tensor of size (K, 1) indicate probability of being plane
         :param bandwidth: float
         :return:  shifted points with size (n, 2)
-        '''
+        """
         distance_matrix = self.cal_distance_matrix(seed_point, point)  # (n, K)
         kernel_matrix = torch.exp((-0.5 / bandwidth**2) * (distance_matrix ** 2)) * (1. / (bandwidth * np.sqrt(2 * np.pi)))
         weighted_matrix = kernel_matrix * prob.t()
@@ -88,26 +89,26 @@ class Bin_Mean_Shift(nn.Module):
         return shifted_point
 
     def label2onehot(self, labels):
-        '''
+        """
         convert a label to one hot vector
         :param labels: tensor with size (n, 1)
         :return: one hot vector tensor with size (n, max_lales+1)
-        '''
+        """
         n = labels.size(0)
         label_num = torch.max(labels).int() + 1
 
         onehot = torch.zeros((n, label_num))
         onehot.scatter_(1, labels.long(), 1.)
 
-        return onehot.cuda()
+        return onehot.to(self.device)
 
     def merge_center(self, seed_point, bandwidth=0.25):
-        '''
+        """
         merge close seed points
         :param seed_point: tensor of size (n, 2)
         :param bandwidth: float
         :return: merged center
-        '''
+        """
         n = seed_point.size(0)
 
         # 1. calculate intensity
@@ -143,19 +144,19 @@ class Bin_Mean_Shift(nn.Module):
         return torch.matmul(weight.t(), seed_point)
 
     def cluster(self, point, center):
-        '''
+        """
         cluter each point to nearset center
         :param point: tensor with size (K, 2)
         :param center: tensor with size (n, 2)
         :return: clustering results, tensor with size (K, n) and sum to one for each row
-        '''
+        """
         # plus 0.01 to avoid divide by zero
         distance_matrix = 1. / (self.cal_distance_matrix(point, center)+0.01)  # (K, n)
         segmentation = F.softmax(distance_matrix, dim=1)
         return segmentation
 
     def bin_shift(self, prob, embedding, param, gt_seg, bandwidth):
-        '''
+        """
         discrete seeding mean shift in training stage
         :param prob: tensor with size (1, h, w) indicate probability of being plane
         :param embedding: tensor with size (2, h, w)
@@ -168,7 +169,7 @@ class Bin_Mean_Shift(nn.Module):
                 sample_prob, tensor with size (N, 1) sampled probability
                 sample_seg, tensor with size (N, 1) sampled ground truth instance segmentation
                 sample_params, tensor with size (3, N), sampled params
-        '''
+        """
 
         c, h, w = embedding.size()
 
@@ -227,14 +228,14 @@ class Bin_Mean_Shift(nn.Module):
         return segmentations, sample_segmentations, sample_params, centers, sample_probs, sample_gt_segs
 
     def test_forward(self, prob, embedding, param, mask_threshold):
-        '''
+        """
         :param prob: probability of planar, tensor with size (1, h, w)
         :param embedding: tensor with size (2, h, w)
         :param mask_threshold: threshold of planar region
         :return: clustering results: numpy array with shape (h, w),
                  sampled segmentation results, tensor with size (N, K) where N is sample size, K is cluster number, row sum to 1
                  sample_params, tensor with size (3, N), sampled params
-        '''
+        """
 
         c, h, w = embedding.size()
 

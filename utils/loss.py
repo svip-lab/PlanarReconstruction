@@ -56,7 +56,7 @@ def hinge_embedding_loss(embedding, num_planes, segmentation, device, t_pull=0.5
         centers.append(center)
 
     # intra-embedding loss within a plane
-    pull_loss = torch.Tensor([0.0]).cuda()
+    pull_loss = torch.Tensor([0.0]).to(device)
     for feature, center in zip(embeddings, centers):
         dis = torch.norm(feature - center, 2, dim=1) - t_pull
         dis = F.relu(dis)

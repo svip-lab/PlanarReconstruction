@@ -67,12 +67,12 @@ with tf.Session() as sess:
         image_path = gt_dict['image_path'][0]
         info = gt_dict['info'][0]
 
-        np.savez(os.path.join(output_dir, '%d.npz'%(i)),
+        np.savez(os.path.join(output_dir, '%d.npz' % (i, )),
                  image=img[0], plane=plane, depth=depth, normal=normal, semantics=semantics,
                  segmentation=segmentation, boundary=boundary, num_planes=num_planes,
                  image_path=image_path, info=info)
 
-        file_list.write('%d.npz\n'%(i))
+        file_list.write('%d.npz\n' % (i, ))
 
         if i % 100 == 99: 
             print(i)

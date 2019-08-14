@@ -45,18 +45,17 @@ Please download our trained network from [here](https://drive.google.com/file/d/
 
 To evaluate the performance of our method, please run:
 ```bash
-python main.py eval with dataset.root_dir=/path/to/save/processd/data resume_dir=pretrained.pt dataset.batch_size=1
+python main.py eval with dataset.root_dir=/path/to/save/processd/data resume_dir=/path/to/pretrained.pt dataset.batch_size=1
 ```
 
 ### Prediction
 Run the following command to predict on a single image.
 ```bash
-python predict.py eval with resume_dir=pretrained.pt input_image=/path/to/image 
+python predict.py with resume_dir=pretrained.pt input_image=/path/to/image
 ```
 
 ## Acknowledgements
-* We thank [Chen Liu](http://art-programmer.github.io/index.html) for his great works and repos.
-* If you do not have GPU devices, please refer to [tomhog](https://github.com/tomhog/PlanarReconstruction) for CPU support.
+We thank [Chen Liu](http://art-programmer.github.io/index.html) for his great works and repos.
 
 ## Citation
 Please cite our paper for any purpose of usage.

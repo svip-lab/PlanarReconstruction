@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 import torchvision.transforms as transforms
 
+
 def uint82bin(n, count=8):
     """returns the binary of integer n, count refers to amount of bits"""
     return ''.join([str((n >> y) & 1) for y in range(count - 1, -1, -1)])

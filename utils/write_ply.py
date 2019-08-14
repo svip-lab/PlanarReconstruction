@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def get_K_inv_dot_xy_1(h=192, w=256):
     focal_length = 517.97
     offset_x = 320
@@ -26,6 +27,7 @@ def get_K_inv_dot_xy_1(h=192, w=256):
 
 
 K_inv_dot_xy_1 = get_K_inv_dot_xy_1()
+
 
 # https://github.com/art-programmer/PlaneNet/blob/88e8c8d7e527ce61620b700babc8232de8804f55/code/utils.py#L860
 def writePLYFileDepth(folder, index, depth, segmentation):
@@ -79,7 +81,7 @@ end_header
                     continue
                 ray = K_inv_dot_xy_1[:, y, x]
                 X, Y, Z = ray * depth[y, x]
-                f.write(str(X) + ' ' +    str(Y) + ' ' + str(Z) + '\n')
+                f.write(str(X) + ' ' + str(Y) + ' ' + str(Z) + '\n')
 
         for face in faces:
             f.write('3 ')
@@ -91,4 +93,3 @@ end_header
             f.write('\n')
         f.close()
     return
-

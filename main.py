@@ -8,7 +8,6 @@ from PIL import Image
 from distutils.version import LooseVersion
 
 from sacred import Experiment
-from sacred.observers import FileStorageObserver
 from easydict import EasyDict as edict
 
 import torch
@@ -17,19 +16,19 @@ import torch.nn.functional as F
 import torchvision.transforms as tf
 
 from models.baseline_same import Baseline as UNet
-from utils.loss import hinge_embedding_loss, class_balanced_cross_entropy_loss, surface_normal_loss, parameter_loss
+from utils.loss import hinge_embedding_loss, surface_normal_loss, parameter_loss, \
+    class_balanced_cross_entropy_loss
 from utils.misc import AverageMeter, get_optimizer
 from utils.metric import eval_iou, eval_plane_prediction
 from utils.disp import tensor_to_image
 from utils.disp import colors_256 as colors
 from bin_mean_shift import Bin_Mean_Shift
-from modules import k_inv_dot_xy1
+from modules import get_coordinate_map
 from utils.loss import Q_loss
 from instance_parameter_loss import InstanceParameterLoss
 from match_segmentation import MatchSegmentation
 
 ex = Experiment()
-ex.observers.append(FileStorageObserver.create('experiments'))
 
 
 class PlaneDataset(data.Dataset):
@@ -138,19 +137,19 @@ class PlaneDataset(data.Dataset):
             segmentation[i, :, :] = seg.reshape(h, w)
 
         # surface plane parameters
-        plane_parameters, valid_region, plane_instance_parameter = self.get_plane_parameters(plane, num_planes, gt_segmentation)
+        plane_parameters, valid_region, plane_instance_parameter = \
+            self.get_plane_parameters(plane, num_planes, gt_segmentation)
 
         # since some depth is missing, we use plane to recover those depth following PlaneNet
         gt_depth = data['depth'].reshape(192, 256)
         depth = self.plane2depth(plane_parameters, num_planes, gt_segmentation, gt_depth).reshape(1, 192, 256)
 
         sample = {
-            'image' : image,
+            'image': image,
             'num_planes': num_planes,
-            'instance' : torch.ByteTensor(segmentation),
+            'instance': torch.ByteTensor(segmentation),
             # one for planar and zero for non-planar
             'semantic': 1 - torch.FloatTensor(segmentation[num_planes, :, :]).unsqueeze(0),
-
             'gt_seg': torch.LongTensor(gt_segmentation),
             'depth': torch.FloatTensor(depth),
             'plane_parameters': torch.FloatTensor(plane_parameters),
@@ -189,15 +188,17 @@ def train(_run, _log):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    checkpoint_dir = os.path.join('experiments', str(_run._id), 'checkpoints')
-    if not os.path.exists(checkpoint_dir):
-        os.makedirs(checkpoint_dir)
+    if not (_run._id is None):
+        checkpoint_dir = os.path.join(_run.observers[0].basedir,
+                                      str(_run._id), 'checkpoints')
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir)
 
     # build network
     network = UNet(cfg.model)
 
     if not cfg.resume_dir == 'None':
-        model_dict = torch.load(cfg.resume_dir)
+        model_dict = torch.load(cfg.resume_dir, map_location=device)
         network.load_state_dict(model_dict)
 
     # load nets into gpu
@@ -212,13 +213,14 @@ def train(_run, _log):
     data_loader = load_dataset('train', cfg.dataset)
 
     # save losses per epoch
-    history = {'losses': [], 'losses_pull': [], 'losses_push': [], 'losses_binary': [], 'losses_depth': [],
-               'ioues': [], 'rmses': []}
+    history = {'losses': [], 'losses_pull': [], 'losses_push': [],
+               'losses_binary': [], 'losses_depth': [], 'ioues': [], 'rmses': []}
 
     network.train(not cfg.model.fix_bn)
 
     bin_mean_shift = Bin_Mean_Shift()
-    instance_parameter_loss = InstanceParameterLoss()
+    k_inv_dot_xy1 = get_coordinate_map(device)
+    instance_parameter_loss = InstanceParameterLoss(k_inv_dot_xy1)
 
     # main loop
     for epoch in range(cfg.num_epochs):
@@ -253,7 +255,8 @@ def train(_run, _log):
                 bin_mean_shift(logit, embedding, param, gt_seg)
 
             # calculate loss
-            loss, loss_pull, loss_push, loss_binary, loss_depth, loss_normal, loss_parameters, loss_pw, loss_instance, loss_boundary = 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.
+            loss, loss_pull, loss_push, loss_binary, loss_depth, loss_normal, loss_parameters, loss_pw, loss_instance \
+                = 0., 0., 0., 0., 0., 0., 0., 0., 0.
             batch_size = image.size(0)
             for i in range(batch_size):
                 _loss, _loss_pull, _loss_push = hinge_embedding_loss(embedding[i:i+1], sample['num_planes'][i:i+1],
@@ -261,11 +264,10 @@ def train(_run, _log):
 
                 _loss_binary = class_balanced_cross_entropy_loss(logit[i], semantic[i])
 
-                _loss_normal, mean_angle = surface_normal_loss(param[i:i+1],
-                                                               gt_plane_parameters[i:i+1], valid_region[i:i+1])
+                _loss_normal, mean_angle = surface_normal_loss(param[i:i+1], gt_plane_parameters[i:i+1],
+                                                               valid_region[i:i+1])
 
-                _loss_L1 = parameter_loss(param[i:i + 1],
-                                          gt_plane_parameters[i:i + 1], valid_region[i:i + 1])
+                _loss_L1 = parameter_loss(param[i:i + 1], gt_plane_parameters[i:i + 1], valid_region[i:i + 1])
                 _loss_depth, rmse, infered_depth = Q_loss(param[i:i+1], k_inv_dot_xy1, gt_depth[i:i+1])
 
                 if segmentations[i] is None:
@@ -273,10 +275,9 @@ def train(_run, _log):
 
                 _instance_loss, instance_depth, instance_abs_disntace, _ = \
                     instance_parameter_loss(segmentations[i], sample_segmentations[i], sample_params[i],
-                                        valid_region[i:i+1], gt_depth[i:i+1])
+                                            valid_region[i:i+1], gt_depth[i:i+1])
 
                 _loss += _loss_binary + _loss_depth + _loss_normal + _instance_loss + _loss_L1
-                #_loss += _loss_binary + _loss_depth + _loss_normal + _pw_loss + _instance_loss + _loss_L1
 
                 # planar segmentation iou
                 prob = torch.sigmoid(logit[i])
@@ -293,7 +294,6 @@ def train(_run, _log):
                 loss_binary += _loss_binary
                 loss_depth += _loss_depth
                 loss_normal += _loss_normal
-                #loss_pw += _pw_loss
                 loss_instance += _instance_loss
 
             loss /= batch_size
@@ -302,7 +302,6 @@ def train(_run, _log):
             loss_binary /= batch_size
             loss_depth /= batch_size
             loss_normal /= batch_size
-            #loss_pw /= batch_size
             loss_instance /= batch_size
 
             # Backward
@@ -317,7 +316,6 @@ def train(_run, _log):
             losses_binary.update(loss_binary.item())
             losses_depth.update(loss_depth.item())
             losses_normal.update(loss_normal.item())
-            #losses_pw.update(loss_pw.item())
             losses_instance.update(loss_instance.item())
 
             # update time
@@ -358,8 +356,9 @@ def train(_run, _log):
         history['rmses'].append(rmses.avg)
 
         # save checkpoint
-        torch.save(network.state_dict(), os.path.join(checkpoint_dir, f"network_epoch_{epoch}.pt"))
-        pickle.dump(history, open(os.path.join(checkpoint_dir, 'history.pkl'), 'wb'))
+        if not (_run._id is None):
+            torch.save(network.state_dict(), os.path.join(checkpoint_dir, f"network_epoch_{epoch}.pt"))
+            pickle.dump(history, open(os.path.join(checkpoint_dir, 'history.pkl'), 'wb'))
 
 
 @ex.command
@@ -372,15 +371,18 @@ def eval(_run, _log):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    checkpoint_dir = os.path.join('experiments', str(_run._id), 'checkpoints')
-    if not os.path.exists(checkpoint_dir):
-        os.makedirs(checkpoint_dir)
+    if not (_run._id is None):
+        checkpoint_dir = os.path.join('experiments', str(_run._id), 'checkpoints')
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir)
 
     # build network
     network = UNet(cfg.model)
 
+    print(type(cfg.resume_dir))
+
     if not cfg.resume_dir == 'None':
-        model_dict = torch.load(cfg.resume_dir)
+        model_dict = torch.load(cfg.resume_dir, map_location=device)
         network.load_state_dict(model_dict)
 
     # load nets into gpu
@@ -395,8 +397,9 @@ def eval(_run, _log):
     pixel_recall_curve = np.zeros((13))
     plane_recall_curve = np.zeros((13, 3))
 
-    bin_mean_shift = Bin_Mean_Shift()
-    instance_parameter_loss = InstanceParameterLoss()
+    bin_mean_shift = Bin_Mean_Shift(device=device)
+    k_inv_dot_xy1 = get_coordinate_map(device)
+    instance_parameter_loss = InstanceParameterLoss(k_inv_dot_xy1)
     match_segmentatin = MatchSegmentation()
 
     with torch.no_grad():
@@ -406,10 +409,10 @@ def eval(_run, _log):
             gt_seg = sample['gt_seg'].numpy()
             semantic = sample['semantic'].to(device)
             gt_depth = sample['depth'].to(device)
-            gt_plane_parameters = sample['plane_parameters'].to(device)
+            # gt_plane_parameters = sample['plane_parameters'].to(device)
             valid_region = sample['valid_region'].to(device)
             gt_plane_num = sample['num_planes'].int()
-            gt_plane_instance_parameter = sample['plane_instance_parameter'].numpy()
+            # gt_plane_instance_parameter = sample['plane_instance_parameter'].numpy()
             
             # forward pass
             logit, embedding, _, _, param = network(image)
@@ -420,7 +423,8 @@ def eval(_run, _log):
             _, _, per_pixel_depth = Q_loss(param, k_inv_dot_xy1, gt_depth)
 
             # fast mean shift
-            segmentation, sampled_segmentation, sample_param = bin_mean_shift.test_forward(prob, embedding[0], param, mask_threshold=0.1)
+            segmentation, sampled_segmentation, sample_param = bin_mean_shift.test_forward(
+                prob, embedding[0], param, mask_threshold=0.1)
 
             # since GT plane segmentation is somewhat noise, the boundary of plane in GT is not well aligned, 
             # we thus use avg_pool_2d to smooth the segmentation results
@@ -434,7 +438,8 @@ def eval(_run, _log):
                 instance_parameter_loss(segmentation, sampled_segmentation, sample_param,
                                         valid_region, gt_depth, False)
 
-            # greed match of predict segmentation and ground truth segmentation using cross entropy to better visualzation
+            # greedy match of predict segmentation and ground truth segmentation using cross entropy
+            # to better visualization
             matching = match_segmentatin(segmentation, prob.view(-1, 1), instance[0], gt_plane_num)
 
             # return cluster results
@@ -470,23 +475,23 @@ def eval(_run, _log):
             gt_depth = gt_depth.cpu().numpy()[0, 0].reshape(h, w)
 
             # evaluation plane segmentation
-            pixelStatistics, planeStatistics = eval_plane_prediction(predict_segmentation, gt_seg,
-                                                                     depth, gt_depth)
+            pixelStatistics, planeStatistics = eval_plane_prediction(
+                predict_segmentation, gt_seg, depth, gt_depth)
 
             pixel_recall_curve += np.array(pixelStatistics)
             plane_recall_curve += np.array(planeStatistics)
 
-            print("pixel and plane recall of test image %d ", iter)
+            print("pixel and plane recall of test image ", iter)
             print(pixel_recall_curve / float(iter+1))
             print(plane_recall_curve[:, 0] / plane_recall_curve[:, 1])
             print("********")
 
             # visualization convert labels to color image
-            # change non planar to zero, so non planar region use the black color
+            # change non-planar regions to zero, so non-planar regions use the black color
             gt_seg += 1
-            gt_seg[gt_seg==21] = 0
+            gt_seg[gt_seg == 21] = 0
             predict_segmentation += 1
-            predict_segmentation[predict_segmentation==21] = 0
+            predict_segmentation[predict_segmentation == 21] = 0
 
             gt_seg_image = cv2.resize(np.stack([colors[gt_seg, 0],
                                                 colors[gt_seg, 1],
@@ -524,9 +529,9 @@ def eval(_run, _log):
             image_4 = np.concatenate((depth_diff, depth, gt_depth), axis=1)
             image = np.concatenate((image_1, image_2, image_3, image_4), axis=0)
 
-            #cv2.imshow('image', image)
-            #cv2.waitKey(0)
-            #cv2.imwrite("%d_segmentation.png"%iter, image)
+            # cv2.imshow('image', image)
+            # cv2.waitKey(0)
+            # cv2.imwrite("%d_segmentation.png"%iter, image)
 
         print("========================================")
         print("pixel and plane recall of all test image")
@@ -539,6 +544,5 @@ if __name__ == '__main__':
     assert LooseVersion(torch.__version__) >= LooseVersion('0.4.0'), \
         'PyTorch>=0.4.0 is required'
 
-    ex.add_config('./configs/config_unet_mean_shift.yaml')
+    ex.add_config('./configs/config.yaml')
     ex.run_commandline()
-
