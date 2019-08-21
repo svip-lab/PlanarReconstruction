@@ -53,7 +53,7 @@ python main.py eval with dataset.root_dir=/path/to/save/processd/data resume_dir
 ### Prediction
 Run the following command to predict on a single image:
 ```bash
-python predict.py with resume_dir=pretrained.pt input_image=/path/to/image
+python predict.py eval with resume_dir=pretrained.pt input_image=/path/to/image
 ```
 
 ## Acknowledgements
