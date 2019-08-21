@@ -189,14 +189,14 @@ def resnet101(pretrained=False, **kwargs):
     return model
 
 
-def load_url(url, map_location=None):
+def load_url(url):
     torch_home = os.path.expanduser(os.getenv('TORCH_HOME', '~/.torch'))
     model_dir = os.getenv('TORCH_MODEL_ZOO', os.path.join(torch_home, 'models'))
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
     filename = url.split('/')[-1]
     cached_file = os.path.join(model_dir, filename)
-    return torch.load(cached_file, map_location=map_location)
+    return torch.load(cached_file, map_location=lambda storage, loc: storage)
 
 
 if __name__ == '__main__':

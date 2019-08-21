@@ -36,8 +36,8 @@ def predict(_run, _log):
     # build network
     network = UNet(cfg.model)
 
-    if not cfg.resume_dir == 'None':
-        model_dict = torch.load(cfg.resume_dir, map_location=device)
+    if not (cfg.resume_dir == 'None'):
+        model_dict = torch.load(cfg.resume_dir, map_location=lambda storage, loc: storage)
         network.load_state_dict(model_dict)
 
     # load nets into gpu

@@ -189,16 +189,15 @@ def train(_run, _log):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if not (_run._id is None):
-        checkpoint_dir = os.path.join(_run.observers[0].basedir,
-                                      str(_run._id), 'checkpoints')
+        checkpoint_dir = os.path.join(_run.observers[0].basedir, str(_run._id), 'checkpoints')
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
 
     # build network
     network = UNet(cfg.model)
 
-    if not cfg.resume_dir == 'None':
-        model_dict = torch.load(cfg.resume_dir, map_location=device)
+    if not (cfg.resume_dir == 'None'):
+        model_dict = torch.load(cfg.resume_dir, map_location=lambda storage, loc: storage)
         network.load_state_dict(model_dict)
 
     # load nets into gpu
@@ -218,7 +217,7 @@ def train(_run, _log):
 
     network.train(not cfg.model.fix_bn)
 
-    bin_mean_shift = Bin_Mean_Shift()
+    bin_mean_shift = Bin_Mean_Shift(device=device)
     k_inv_dot_xy1 = get_coordinate_map(device)
     instance_parameter_loss = InstanceParameterLoss(k_inv_dot_xy1)
 
@@ -379,10 +378,8 @@ def eval(_run, _log):
     # build network
     network = UNet(cfg.model)
 
-    print(type(cfg.resume_dir))
-
-    if not cfg.resume_dir == 'None':
-        model_dict = torch.load(cfg.resume_dir, map_location=device)
+    if not (cfg.resume_dir == 'None'):
+        model_dict = torch.load(cfg.resume_dir, map_location=lambda storage, loc: storage)
         network.load_state_dict(model_dict)
 
     # load nets into gpu

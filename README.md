@@ -4,7 +4,11 @@ PyTorch implementation of our CVPR 2019 paper:
 
 [Single-Image Piece-wise Planar 3D Reconstruction via Associative Embedding](https://arxiv.org/pdf/1902.09777.pdf)
 
-Zehao Yu\*, [Jia Zheng](https://bertjiazheng.github.io/)\*, [Dongze Lian](https://svip-lab.github.io/team/liandz.html), [Zihan Zhou](https://faculty.ist.psu.edu/zzhou/Home.html), [Shenghua Gao](http://sist.shanghaitech.edu.cn/sist_en/2018/0820/c3846a31775/page.htm)
+Zehao Yu\*,
+[Jia Zheng](https://bertjiazheng.github.io/)\*,
+[Dongze Lian](https://svip-lab.github.io/team/liandz.html),
+[Zihan Zhou](https://faculty.ist.psu.edu/zzhou/Home.html),
+[Shenghua Gao](http://sist.shanghaitech.edu.cn/sist_en/2018/0820/c3846a31775/page.htm)
 
 (\* Equal Contribution)
 
@@ -14,7 +18,7 @@ Zehao Yu\*, [Jia Zheng](https://bertjiazheng.github.io/)\*, [Dongze Lian](https:
 
 ### Installation
 
-Clone repository:
+Clone repository and use [git-lfs](https://git-lfs.github.com/) to fetch the trained model (or download [here](https://drive.google.com/file/d/1Aa1Jb0CGpiYXKHeTwpXAwcwu_yEqdkte/view?usp=sharing)):
 ```bash
 git clone git@github.com:svip-lab/PlanarReconstruction.git
 ```
@@ -35,21 +39,19 @@ python data_tools/convert_tfrecords.py --data_type=val --input_tfrecords_file=/p
 ```
 
 ### Training
-Run the following command to train our network. 
+Run the following command to train our network:
 ```bash
 python main.py train with dataset.root_dir=/path/to/save/processd/data
 ```
 
 ### Evaluation
-Please download our trained network from [here](https://drive.google.com/file/d/1Aa1Jb0CGpiYXKHeTwpXAwcwu_yEqdkte/view?usp=sharing).
-
-To evaluate the performance of our method, please run:
+Run the following command to evaluate the performance:
 ```bash
 python main.py eval with dataset.root_dir=/path/to/save/processd/data resume_dir=/path/to/pretrained.pt dataset.batch_size=1
 ```
 
 ### Prediction
-Run the following command to predict on a single image.
+Run the following command to predict on a single image:
 ```bash
 python predict.py with resume_dir=pretrained.pt input_image=/path/to/image
 ```
