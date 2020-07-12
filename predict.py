@@ -57,8 +57,9 @@ def predict(_run, _log):
 
     h, w = 192, 256
     
-    for f in os.listdir('./predict'):
-        os.remove('./predict/'+f)
+    if os.path.isdir('./predict'):
+        for f in os.listdir('./predict'):
+            os.remove('./predict/'+f)
 
     with torch.no_grad():
         if os.path.isdir(cfg.image_path):
