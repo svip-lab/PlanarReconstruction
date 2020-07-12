@@ -56,76 +56,90 @@ def predict(_run, _log):
     instance_parameter_loss = InstanceParameterLoss(k_inv_dot_xy1)
 
     h, w = 192, 256
+    
+    for f in os.listdir('./predict'):
+        os.remove('./predict/'+f)
 
     with torch.no_grad():
-        image = cv2.imread(cfg.image_path)
-        # the network is trained with 192*256 and the intrinsic parameter is set as ScanNet
-        image = cv2.resize(image, (w, h))
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(image)
-        image = transforms(image)
-        image = image.to(device).unsqueeze(0)
-        # forward pass
-        logit, embedding, _, _, param = network(image)
+        if os.path.isdir(cfg.image_path):
+            images = [cfg.image_path+x for x in os.listdir(cfg.image_path)]
+        else:
+            images = [cfg.image_path]
+        for image_path in images:
+            image = cv2.imread(image_path)
+            # the network is trained with 192*256 and the intrinsic parameter is set as ScanNet
+            image = cv2.resize(image, (w, h))
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = Image.fromarray(image)
+            image = transforms(image)
+            image = image.to(device).unsqueeze(0)
+            # forward pass
+            logit, embedding, _, _, param = network(image)
 
-        prob = torch.sigmoid(logit[0])
-        
-        # infer per pixel depth using per pixel plane parameter, currently Q_loss need a dummy gt_depth as input
-        _, _, per_pixel_depth = Q_loss(param, k_inv_dot_xy1, torch.ones_like(logit))
+            prob = torch.sigmoid(logit[0])
 
-        # fast mean shift
-        segmentation, sampled_segmentation, sample_param = bin_mean_shift.test_forward(
-            prob, embedding[0], param, mask_threshold=0.1)
+            # infer per pixel depth using per pixel plane parameter, currently Q_loss need a dummy gt_depth as input
+            _, _, per_pixel_depth = Q_loss(param, k_inv_dot_xy1, torch.ones_like(logit))
 
-        # since GT plane segmentation is somewhat noise, the boundary of plane in GT is not well aligned, 
-        # we thus use avg_pool_2d to smooth the segmentation results
-        b = segmentation.t().view(1, -1, h, w)
-        pooling_b = torch.nn.functional.avg_pool2d(b, (7, 7), stride=1, padding=(3, 3))
-        b = pooling_b.view(-1, h*w).t()
-        segmentation = b
+            # fast mean shift
+            segmentation, sampled_segmentation, sample_param = bin_mean_shift.test_forward(
+                prob, embedding[0], param, mask_threshold=0.1)
 
-        # infer instance depth
-        instance_loss, instance_depth, instance_abs_disntace, instance_parameter = instance_parameter_loss(
-            segmentation, sampled_segmentation, sample_param, torch.ones_like(logit), torch.ones_like(logit), False)
+            # since GT plane segmentation is somewhat noise, the boundary of plane in GT is not well aligned, 
+            # we thus use avg_pool_2d to smooth the segmentation results
+            b = segmentation.t().view(1, -1, h, w)
+            pooling_b = torch.nn.functional.avg_pool2d(b, (7, 7), stride=1, padding=(3, 3))
+            b = pooling_b.view(-1, h*w).t()
+            segmentation = b
 
-        # return cluster results
-        predict_segmentation = segmentation.cpu().numpy().argmax(axis=1)
+            # infer instance depth
+            instance_loss, instance_depth, instance_abs_disntace, instance_parameter = instance_parameter_loss(
+                segmentation, sampled_segmentation, sample_param, torch.ones_like(logit), torch.ones_like(logit), False)
 
-        # mask out non planar region
-        predict_segmentation[prob.cpu().numpy().reshape(-1) <= 0.1] = 20
-        predict_segmentation = predict_segmentation.reshape(h, w)
+            # return cluster results
+            predict_segmentation = segmentation.cpu().numpy().argmax(axis=1)
 
-        # visualization and evaluation
-        image = tensor_to_image(image.cpu()[0])
-        mask = (prob > 0.1).float().cpu().numpy().reshape(h, w)
-        depth = instance_depth.cpu().numpy()[0, 0].reshape(h, w)
-        per_pixel_depth = per_pixel_depth.cpu().numpy()[0, 0].reshape(h, w)
+            # mask out non planar region
+            predict_segmentation[prob.cpu().numpy().reshape(-1) <= 0.1] = 20
+            predict_segmentation = predict_segmentation.reshape(h, w)
 
-        # use per pixel depth for non planar region
-        depth = depth * (predict_segmentation != 20) + per_pixel_depth * (predict_segmentation == 20)
+            # visualization and evaluation
+            image = tensor_to_image(image.cpu()[0])
+            mask = (prob > 0.1).float().cpu().numpy().reshape(h, w)
+            depth = instance_depth.cpu().numpy()[0, 0].reshape(h, w)
+            per_pixel_depth = per_pixel_depth.cpu().numpy()[0, 0].reshape(h, w)
 
-        # change non planar to zero, so non planar region use the black color
-        predict_segmentation += 1
-        predict_segmentation[predict_segmentation == 21] = 0
+            # use per pixel depth for non planar region
+            depth = depth * (predict_segmentation != 20) + per_pixel_depth * (predict_segmentation == 20)
 
-        pred_seg = cv2.resize(np.stack([colors[predict_segmentation, 0],
-                                        colors[predict_segmentation, 1],
-                                        colors[predict_segmentation, 2]], axis=2), (w, h))
+            # change non planar to zero, so non planar region use the black color
+            predict_segmentation += 1
+            predict_segmentation[predict_segmentation == 21] = 0
 
-        # blend image
-        blend_pred = (pred_seg * 0.7 + image * 0.3).astype(np.uint8)
+            pred_seg = cv2.resize(np.stack([colors[predict_segmentation, 0],
+                                            colors[predict_segmentation, 1],
+                                            colors[predict_segmentation, 2]], axis=2), (w, h))
 
-        mask = cv2.resize((mask * 255).astype(np.uint8), (w, h))
-        mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+            # blend image
+            blend_pred = (pred_seg * 0.7 + image * 0.3).astype(np.uint8)
 
-        # visualize depth map as PlaneNet
-        depth = 255 - np.clip(depth / 5 * 255, 0, 255).astype(np.uint8)
-        depth = cv2.cvtColor(cv2.resize(depth, (w, h)), cv2.COLOR_GRAY2BGR)
+            mask = cv2.resize((mask * 255).astype(np.uint8), (w, h))
+            mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
 
-        image = np.concatenate((image, pred_seg, blend_pred, mask, depth), axis=1)
+            # visualize depth map as PlaneNet
+            depth = 255 - np.clip(depth / 5 * 255, 0, 255).astype(np.uint8)
+            depth = cv2.cvtColor(cv2.resize(depth, (w, h)), cv2.COLOR_GRAY2BGR)
 
-        cv2.imshow('image', image)
-        cv2.waitKey(0)
+            image = np.concatenate((image, pred_seg, blend_pred, mask, depth), axis=1)
+
+            if not os.path.isdir('./predict'):
+                os.mkdir('./predict/')
+            cv2.imwrite('./predict/'+image_path.split('/')[-1][:-4]+'_seg.png', pred_seg)
+            cv2.imwrite('./predict/'+image_path.split('/')[-1][:-4]+'_blend.png', blend_pred)
+            cv2.imwrite('./predict/'+image_path.split('/')[-1][:-4]+'_mask.png', mask)
+            cv2.imwrite('./predict/'+image_path.split('/')[-1][:-4]+'_depth.png', depth)
+            # cv2.imshow('image', image)
+            # cv2.waitKey(0)
 
 
 if __name__ == '__main__':
