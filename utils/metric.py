@@ -14,8 +14,8 @@ def eval_iou(annotation,segmentation):
 
     """
 
-    annotation   = annotation.astype(np.bool)
-    segmentation = segmentation.astype(np.bool)
+    annotation   = annotation.astype(bool)
+    segmentation = segmentation.astype(bool)
 
     if np.isclose(np.sum(annotation),0) and np.isclose(np.sum(segmentation),0):
         return 1

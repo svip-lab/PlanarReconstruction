@@ -117,7 +117,7 @@ class Bin_Mean_Shift(nn.Module):
 
         # merge center if distance between two points less than bandwidth
         sorted_intensity, indices = torch.sort(intensity, descending=True)
-        is_center = np.ones(n, dtype=np.bool)
+        is_center = np.ones(n, dtype=bool)
         indices = indices.cpu().numpy()
         center = np.zeros(n, dtype=np.uint8)
 
