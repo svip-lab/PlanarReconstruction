@@ -187,7 +187,8 @@ def train(_run, _log):
     random.seed(cfg.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    print('Device:',device)
+    print('*'*100)
     if not (_run._id is None):
         checkpoint_dir = os.path.join(_run.observers[0].basedir, str(_run._id), 'checkpoints')
         if not os.path.exists(checkpoint_dir):

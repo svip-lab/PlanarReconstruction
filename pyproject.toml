@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "ml3d"
+version = "0.1.0"
+description = "ml3d project"
+authors = ["Your Name <you@example.com>"]
+license = "n"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "3.8.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
