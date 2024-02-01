@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 
 from models import resnet_scene as resnet
+from transformers import DPTFeatureExtractor as dpt
+
 
 
 class ResNet(nn.Module):
@@ -38,19 +40,20 @@ class ResNet(nn.Module):
         x4 = self.layer3(x3)
         x5 = self.layer4(x4)
 
-        return x1, x2, x3, x4, x5
-
+        return x1, x2, x3, x4, x5 
 
 class Baseline(nn.Module):
     def __init__(self, cfg):
         super(Baseline, self).__init__()
-
+        self.feature_extractor = dpt.from_pretrained("Intel/dpt-large")
+        self.dpt = cfg.dpt
         orig_resnet = resnet.__dict__[cfg.arch](pretrained=cfg.pretrained)
         self.backbone = ResNet(orig_resnet)
+        self.device =  torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.relu = nn.ReLU(inplace=True)
 
-        channel = 64
+        channel = 3 if cfg.dpt else 64
         # top down
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear')
         self.up_conv5 = nn.Conv2d(channel, channel, (1, 1))
@@ -96,11 +99,34 @@ class Baseline(nn.Module):
         return p0, p1, p2, p3, p4, p5
 
     def forward(self, x):
-        # bottom up
-        c1, c2, c3, c4, c5 = self.backbone(x)
 
-        # top down
-        p0, p1, p2, p3, p4, p5 = self.top_down((c1, c2, c3, c4, c5))
+        # Garbage, can delete
+        # print(x.size())
+        # print('11'*111)
+        # print(x[0])
+        # feature_extractor = dpt.from_pretrained("Intel/dpt-large")
+        # test = self.feature_extractor(x,do_resize=False,return_tensors='pt')
+        # print(test.data.keys())
+        # print('x'*100)
+        # print(test.data['pixel_values'][0])
+        # print('00'*111)
+        # print(test.data['pixel_values'].size())
+        # print('00'*111)
+
+        if self.dpt:
+            p0 = self.feature_extractor(x, do_resize=False, return_tensors='pt').data['pixel_values'].to(self.device)
+        else:
+            # bottom up
+            c1, c2, c3, c4, c5 = self.backbone(x)
+            # print('_'*100)
+            # print(c1.size(),'_',c2.size(),'_',c3.size(),'_',c4.size(),'_',c5.size())
+            # print('..'*100)
+
+            # top down
+            p0, p1, p2, p3, p4, p5 = self.top_down((c1, c2, c3, c4, c5))
+            # print(p0.size(),'_',p1.size(),'_',p2.size(),'_',p3.size(),'_',p4.size(),'_',p5.size())
+            # print('='*100)
+            
 
         # output
         prob = self.pred_prob(p0)
@@ -110,3 +136,5 @@ class Baseline(nn.Module):
         param = self.pred_param(p0)
 
         return prob, embedding, depth, surface_normal, param
+
+    
