@@ -181,24 +181,27 @@ def load_dataset(subset, cfg):
 @ex.command
 def train(_run, _log):
     cfg = edict(_run.config)
-
+    checkpoint_dir = cfg.resume_dir 
+    model_name = cfg.model.name
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
     random.seed(cfg.seed)
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    if not (_run._id is None):
-        checkpoint_dir = os.path.join(_run.observers[0].basedir, str(_run._id), 'checkpoints')
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir)
+    # print('Device:',device)
+    # print('*'*100)
+    # if not (_run._id is None):
+    #     checkpoint_dir = os.path.join(_run.observers[0].basedir, str(_run._id), 'checkpoints')
+    #     if not os.path.exists(checkpoint_dir):
+    #         os.makedirs(checkpoint_dir)
+    #     print(checkpoint_dir)
+    #     print('_-_'*80)
 
     # build network
     network = UNet(cfg.model)
-
-    if not (cfg.resume_dir == 'None'):
-        model_dict = torch.load(cfg.resume_dir, map_location=lambda storage, loc: storage)
-        network.load_state_dict(model_dict)
+    
+    # if not (cfg.resume_dir == 'None'):
+    #     model_dict = torch.load(cfg.resume_dir, map_location=lambda storage, loc: storage)
+    #     network.load_state_dict(model_dict)
 
     # load nets into gpu
     if cfg.num_gpus > 1 and torch.cuda.is_available():
@@ -355,9 +358,9 @@ def train(_run, _log):
         history['rmses'].append(rmses.avg)
 
         # save checkpoint
-        if not (_run._id is None):
-            torch.save(network.state_dict(), os.path.join(checkpoint_dir, f"network_epoch_{epoch}.pt"))
-            pickle.dump(history, open(os.path.join(checkpoint_dir, 'history.pkl'), 'wb'))
+        # if not (_run._id is None):
+    torch.save(network.state_dict(), os.path.join(checkpoint_dir, f"{model_name}.pt"))
+    pickle.dump(history, open(os.path.join(checkpoint_dir, 'history.pkl'), 'wb'))
 
 
 @ex.command
@@ -370,17 +373,14 @@ def eval(_run, _log):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if not (_run._id is None):
-        checkpoint_dir = os.path.join('experiments', str(_run._id), 'checkpoints')
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir)
+    checkpoint_dir = cfg.resume_dir 
+    model_name = cfg.model.name
 
     # build network
     network = UNet(cfg.model)
 
-    if not (cfg.resume_dir == 'None'):
-        model_dict = torch.load(cfg.resume_dir, map_location=lambda storage, loc: storage)
-        network.load_state_dict(model_dict)
+    model_dict = torch.load('/cluster/52/sarwath/snet/output/models/baseline_4.pt', map_location=lambda storage, loc: storage)
+    network.load_state_dict(model_dict)
 
     # load nets into gpu
     if cfg.num_gpus > 1 and torch.cuda.is_available():

@@ -1,8 +1,9 @@
 seed: 123
 num_gpus: 1
-num_epochs: 100
-resume_dir: None
-print_interval: 10
+num_epochs: 5
+resume_dir: /cluster/52/sarwath/snet/output/models/
+print_interval: 100
+
 
 solver:
   method: adam
@@ -10,7 +11,7 @@ solver:
   weight_decay: 0.00001
 
 dataset:
-  root_dir: /new_disk2/yuzh/PlaneNetData/
+  root_dir: /cluster/52/sarwath/snet/output/processed/
   batch_size: 16
   num_workers: 8
 
@@ -19,3 +20,6 @@ model:
   pretrained: True
   embed_dims: 2
   fix_bn: False
+  name: baseline_4
+  dpt: False
+  semantic: False

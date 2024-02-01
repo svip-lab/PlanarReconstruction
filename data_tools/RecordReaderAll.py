@@ -1,5 +1,6 @@
 # modified from https://github.com/art-programmer/PlaneNet
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 
 HEIGHT=192
 WIDTH=256

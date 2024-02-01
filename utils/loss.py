@@ -45,9 +45,10 @@ def hinge_embedding_loss(embedding, num_planes, segmentation, device, t_pull=0.5
     embedding = embedding[0]
     segmentation = segmentation[0]
     embeddings = []
+    # print(segmentation[0, :, :].view(1, h, w))
     # select embedding with segmentation
     for i in range(num_planes):
-        feature = torch.transpose(torch.masked_select(embedding, segmentation[i, :, :].view(1, h, w)).view(c, -1), 0, 1)
+        feature = torch.transpose(torch.masked_select(embedding, segmentation[i, :, :].view(1, h, w).bool()).view(c, -1), 0, 1)
         embeddings.append(feature)
 
     centers = []
@@ -90,8 +91,8 @@ def surface_normal_loss(prediction, surface_normal, valid_region):
         valid_predition = torch.transpose(prediction.view(c, -1), 0, 1)
         valid_surface_normal = torch.transpose(surface_normal.view(c, -1), 0, 1)
     else:
-        valid_predition = torch.transpose(torch.masked_select(prediction, valid_region).view(c, -1), 0, 1)
-        valid_surface_normal = torch.transpose(torch.masked_select(surface_normal, valid_region).view(c, -1), 0, 1)
+        valid_predition = torch.transpose(torch.masked_select(prediction, valid_region.bool()).view(c, -1), 0, 1)
+        valid_surface_normal = torch.transpose(torch.masked_select(surface_normal, valid_region.bool()).view(c, -1), 0, 1)
 
     similarity = torch.nn.functional.cosine_similarity(valid_predition, valid_surface_normal, dim=1)
 
@@ -107,8 +108,8 @@ def parameter_loss(prediction, param, valid_region):
         valid_predition = torch.transpose(prediction.view(c, -1), 0, 1)
         valid_param = torch.transpose(param.view(c, -1), 0, 1)
     else:
-        valid_predition = torch.transpose(torch.masked_select(prediction, valid_region).view(c, -1), 0, 1)
-        valid_param = torch.transpose(torch.masked_select(param, valid_region).view(c, -1), 0, 1)
+        valid_predition = torch.transpose(torch.masked_select(prediction, valid_region.bool()).view(c, -1), 0, 1)
+        valid_param = torch.transpose(torch.masked_select(param, valid_region.bool()).view(c, -1), 0, 1)
 
     return torch.mean(torch.sum(torch.abs(valid_predition - valid_param), dim=1))
 

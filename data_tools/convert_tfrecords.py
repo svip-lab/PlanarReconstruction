@@ -1,11 +1,13 @@
-import tensorflow as tf
 import numpy as np
 import os
 import argparse
 
 from RecordReaderAll import *
 
-os.environ['CUDA_VISIBLE_DEVICES']=''
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+
+#os.environ['CUDA_VISIBLE_DEVICES']='0'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--input_tfrecords_file', type=str,
@@ -27,14 +29,14 @@ if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
 if data_type == 'train':
-    file_list = open(output_dir + '/train.txt', 'w')
     output_dir = os.path.join(output_dir, 'train')
-    os.makedirs(output_dir)
+    os.makedirs(output_dir,exist_ok=True)
+    file_list = open(output_dir + '/train.txt', 'w')
     max_num = 50000
 elif data_type == 'val':
-    file_list = open(output_dir + '/val.txt', 'w')
     output_dir = os.path.join(output_dir, 'val')
-    os.makedirs(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    file_list = open(output_dir + '/val.txt', 'w')
     max_num = 760
 else:
     print("unsupported data type")
@@ -74,7 +76,7 @@ with tf.Session() as sess:
 
         file_list.write('%d.npz\n' % (i, ))
 
-        if i % 100 == 99: 
+        if i % 1000 == 99: 
             print(i)
 
 file_list.close()
