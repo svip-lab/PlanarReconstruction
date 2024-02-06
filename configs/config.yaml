@@ -2,7 +2,7 @@ seed: 123
 num_gpus: 1
 num_epochs: 5
 resume_dir: /cluster/52/sarwath/snet/output/models/
-print_interval: 100
+print_interval: 10
 
 
 solver:
@@ -16,10 +16,8 @@ dataset:
   num_workers: 8
 
 model:
-  arch: resnet101
+  arch: resnet101 #  dpt #  
   pretrained: True
   embed_dims: 2
   fix_bn: False
-  name: baseline_4
-  dpt: False
-  semantic: False
+  semantic: True

@@ -66,7 +66,7 @@ def predict(_run, _log):
         image = transforms(image)
         image = image.to(device).unsqueeze(0)
         # forward pass
-        logit, embedding, _, _, param = network(image)
+        logit, embedding, _, _, param, semantic, combi = network(image)
 
         prob = torch.sigmoid(logit[0])
         

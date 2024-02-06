@@ -151,3 +151,13 @@ def Q_loss(param, k_inv_dot_xy1, gt_depth):
     q_diff = torch.abs(torch.sum(valid_param * Q, dim=0, keepdim=True) - 1.)
     loss = torch.mean(q_diff)
     return loss, abs_distance, infered_depth.view(1, 1, h, w)
+
+def semantic_loss(semantic, gt_class,device):
+    b, c, h, w = semantic.size()
+
+    semantic = torch.transpose(semantic.view(c, -1).to(device), 0, 1)
+    gt_class = gt_class.long().view(-1).to(device)
+    loss_func = torch.nn.CrossEntropyLoss().to(device)
+    loss = loss_func(semantic, gt_class)
+    return loss
+
