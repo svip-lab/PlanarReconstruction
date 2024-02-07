@@ -407,6 +407,7 @@ def train(_run, _log):
         # save checkpoint
         # if not (_run._id is None):
     torch.save(network.state_dict(), model_path)
+    torch.save(embedding, 'embedding.pt')
     pickle.dump(history, open(os.path.join(checkpoint_dir, 'history_semantic.pkl'), 'wb'))
 
 
