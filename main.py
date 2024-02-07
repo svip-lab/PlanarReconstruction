@@ -228,7 +228,8 @@ def train(_run, _log):
 
     # save losses per epoch
     history = {'losses': [], 'losses_pull': [], 'losses_push': [],
-               'losses_binary': [], 'losses_depth': [], 'ioues': [], 'rmses': []}
+               'losses_binary': [], 'losses_depth': [], 'ioues': [], 'rmses': [],
+               'losses_semantic': []}
 
     network.train(not cfg.model.fix_bn)
 

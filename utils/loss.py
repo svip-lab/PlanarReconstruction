@@ -197,6 +197,10 @@ def contrastive_loss(embedding, num_planes, segmentation, device, temperature=0.
     segmentation = segmentation[0]
     embeddings = []
 
+    # Debug print
+    print(f"Batch size: {b}, Channels: {c}, Height: {h}, Width: {w}")
+    print(f"Number of planes: {num_planes}")
+
     # print(embedding.size()) # 2 x 192 x 256 CHECK
     nonzero = 0
     # select embedding with segmentation
@@ -205,6 +209,9 @@ def contrastive_loss(embedding, num_planes, segmentation, device, temperature=0.
         nonzero += feature.shape[0]
         # print(feature.shape) # num pixels of plane i x 2 CHECK
         embeddings.append(feature)
+
+    # Debug print
+    print(f"Non-zero features count: {nonzero}")
 
     centers = []
     for feature in embeddings:
@@ -244,5 +251,10 @@ def contrastive_loss(embedding, num_planes, segmentation, device, temperature=0.
     log_prob = positive.sum(0) - torch.log(exp_logits.sum(0, keepdim=True))
 
     loss = - (temperature / base_temperature) * log_prob
+
+    # Debug print
+    print(f"Logits shape: {logits.shape}, Positive shape: {positive.shape}")
+    print(f"Sample logits: {logits[:5]}, Sample positive: {positive[:5]}")
+    print(f"Loss tensor: {loss}")
 
     return torch.mean(loss), torch.mean(loss), torch.tensor(0)
