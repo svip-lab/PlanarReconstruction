@@ -1,7 +1,7 @@
 seed: 123
 num_gpus: 1
 num_epochs: 5
-resume_dir: /cluster/52/sarwath/snet/output/models/
+resume_dir: /Users/dimafadeev/Desktop/Catalog/TUM/WS23/ML3D/repo/output/models/
 print_interval: 10
 
 
@@ -11,7 +11,7 @@ solver:
   weight_decay: 0.00001
 
 dataset:
-  root_dir: /cluster/52/sarwath/snet/output/processed/
+  root_dir: /Users/dimafadeev/Desktop/Catalog/TUM/WS23/ML3D/repo/output/processed/
   batch_size: 16
   num_workers: 8
 

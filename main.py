@@ -17,7 +17,7 @@ import torchvision.transforms as tf
 
 from models.baseline_same import Baseline as UNet
 from utils.loss import hinge_embedding_loss, surface_normal_loss, parameter_loss, \
-    class_balanced_cross_entropy_loss
+    class_balanced_cross_entropy_loss, contrastive_loss
 from utils.misc import AverageMeter, get_optimizer
 from utils.metric import eval_iou, eval_plane_prediction
 from utils.disp import tensor_to_image
@@ -291,9 +291,13 @@ def train(_run, _log):
                 = 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.
             batch_size = image.size(0)
             for i in range(batch_size):
-                _loss_semantic = 0 
-                _loss, _loss_pull, _loss_push = hinge_embedding_loss(embedding[i:i+1], sample['num_planes'][i:i+1],
-                                                                     instance[i:i+1], device)
+                _loss_semantic = 0
+                # Update with contrastive losee
+                # _loss, _loss_pull, _loss_push = hinge_embedding_loss(embedding[i:i+1], sample['num_planes'][i:i+1],
+                #                                                      instance[i:i+1], device)
+
+                _loss, _loss_pull, _loss_push = contrastive_loss(embedding[i:i + 1], sample['num_planes'][i:i + 1],
+                                                                     instance[i:i + 1], device)
 
                 _loss_binary = class_balanced_cross_entropy_loss(logit[i], planar[i])
 
