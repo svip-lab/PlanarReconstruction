@@ -201,7 +201,7 @@ def contrastive_loss(embedding, num_planes, segmentation, device, temperature=0.
     nonzero = 0
     # select embedding with segmentation
     for i in range(num_planes):  # do not take non-planar region
-        feature = torch.transpose(torch.masked_select(embedding, segmentation[i, :, :].view(1, h, w)).view(c, -1), 0, 1)
+        feature = torch.transpose(torch.masked_select(embedding, segmentation[i, :, :].view(1, h, w).bool()).view(c, -1), 0, 1)
         nonzero += feature.shape[0]
         # print(feature.shape) # num pixels of plane i x 2 CHECK
         embeddings.append(feature)
