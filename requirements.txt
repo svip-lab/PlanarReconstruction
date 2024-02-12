@@ -1,6 +1,6 @@
-torch==0.4.1
-torchvision==0.2.0
-tensorflow==1.14.0
+# torch==0.4.1
+# torchvision==0.2.0
+# tensorflow==1.14.0
 imageio
 scipy
 argparse

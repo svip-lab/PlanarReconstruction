@@ -45,9 +45,10 @@ def hinge_embedding_loss(embedding, num_planes, segmentation, device, t_pull=0.5
     embedding = embedding[0]
     segmentation = segmentation[0]
     embeddings = []
+    # print(segmentation[0, :, :].view(1, h, w))
     # select embedding with segmentation
     for i in range(num_planes):
-        feature = torch.transpose(torch.masked_select(embedding, segmentation[i, :, :].view(1, h, w)).view(c, -1), 0, 1)
+        feature = torch.transpose(torch.masked_select(embedding, segmentation[i, :, :].view(1, h, w).bool()).view(c, -1), 0, 1)
         embeddings.append(feature)
 
     centers = []
@@ -90,8 +91,8 @@ def surface_normal_loss(prediction, surface_normal, valid_region):
         valid_predition = torch.transpose(prediction.view(c, -1), 0, 1)
         valid_surface_normal = torch.transpose(surface_normal.view(c, -1), 0, 1)
     else:
-        valid_predition = torch.transpose(torch.masked_select(prediction, valid_region).view(c, -1), 0, 1)
-        valid_surface_normal = torch.transpose(torch.masked_select(surface_normal, valid_region).view(c, -1), 0, 1)
+        valid_predition = torch.transpose(torch.masked_select(prediction, valid_region.bool()).view(c, -1), 0, 1)
+        valid_surface_normal = torch.transpose(torch.masked_select(surface_normal, valid_region.bool()).view(c, -1), 0, 1)
 
     similarity = torch.nn.functional.cosine_similarity(valid_predition, valid_surface_normal, dim=1)
 
@@ -107,8 +108,8 @@ def parameter_loss(prediction, param, valid_region):
         valid_predition = torch.transpose(prediction.view(c, -1), 0, 1)
         valid_param = torch.transpose(param.view(c, -1), 0, 1)
     else:
-        valid_predition = torch.transpose(torch.masked_select(prediction, valid_region).view(c, -1), 0, 1)
-        valid_param = torch.transpose(torch.masked_select(param, valid_region).view(c, -1), 0, 1)
+        valid_predition = torch.transpose(torch.masked_select(prediction, valid_region.bool()).view(c, -1), 0, 1)
+        valid_param = torch.transpose(torch.masked_select(param, valid_region.bool()).view(c, -1), 0, 1)
 
     return torch.mean(torch.sum(torch.abs(valid_predition - valid_param), dim=1))
 
@@ -150,3 +151,110 @@ def Q_loss(param, k_inv_dot_xy1, gt_depth):
     q_diff = torch.abs(torch.sum(valid_param * Q, dim=0, keepdim=True) - 1.)
     loss = torch.mean(q_diff)
     return loss, abs_distance, infered_depth.view(1, 1, h, w)
+
+def semantic_loss(semantic, gt_class,device):
+    b, c, h, w = semantic.size()
+
+    semantic = torch.transpose(semantic.view(c, -1).to(device), 0, 1)
+    gt_class = gt_class.long().view(-1).to(device)
+    loss_func = torch.nn.CrossEntropyLoss().to(device)
+    loss = loss_func(semantic, gt_class)
+    return loss
+
+
+def contrastive_loss(embedding, num_planes, segmentation, device, temperature=0.07, base_temperature=0.07):
+    """Args:
+        features: hidden vector of shape [batch_size, num_features].
+        labels: ground truth of shape [batch_size].
+    Returns:
+        A loss scalar.
+    """
+    # logits --> for each pixel, the dot product of its embedding and the mean embedding of each plane
+    # segmentation --> for each pixel, take its num_planes masks (should be one-hot)
+
+    # PROBLEM!! NOT EVERY PIXEL IS FROM A PLANE, THOSE HAVE NO SEGMENTATION AND SHOULD NOT BE ACCOUNTED!
+
+    # print(torch.min(torch.sum(segmentation, dim=0)), torch.max(torch.sum(segmentation, dim=0))) # 1, 1 CHECKED, IT IS 0
+    # print(torch.unique(segmentation.sum(dim=0))) # [0,1]
+
+    # print(logits.shape, segmentation.shape) # num_planes x h*w CHECK
+
+    # print(positive.shape) # num_planes x h*w CHECK
+
+    # GOAL: If positive is 0, that pixel is not from a plane, it has to be discarded from everywhere
+
+    # print(indices, indices.shape)
+    # print(nonzero, len(indices)) # IT'S THE SAME
+
+    b, c, h, w = embedding.size()  # b = 1
+
+    # print(embedding.size()) # 1 x 2 x 192 x 256 CHECK
+
+    # Since it is a single image get rid of first dimension (batch)
+    num_planes = num_planes.numpy()[0]
+    # print(num_planes) # 7 for the first
+    embedding = embedding[0]
+    segmentation = segmentation[0]
+    embeddings = []
+
+    # Debug print
+    # print(f"Batch size: {b}, Channels: {c}, Height: {h}, Width: {w}")
+    # print(f"Number of planes: {num_planes}")
+
+    # print(embedding.size()) # 2 x 192 x 256 CHECK
+    nonzero = 0
+    # select embedding with segmentation
+    for i in range(num_planes):  # do not take non-planar region
+        feature = torch.transpose(torch.masked_select(embedding, segmentation[i, :, :].view(1, h, w).bool()).view(c, -1), 0, 1)
+        nonzero += feature.shape[0]
+        # print(feature.shape) # num pixels of plane i x 2 CHECK
+        embeddings.append(feature)
+
+    # # Debug print
+    # print(f"Non-zero features count: {nonzero}")
+
+    centers = []
+    for feature in embeddings:
+        center = torch.mean(feature, dim=0).view(1, c)
+        centers.append(center)
+    centers = torch.cat(centers)
+
+    centers = centers.unsqueeze(1)
+    embedding = embedding.view(-1, c).unsqueeze(0)
+    logits = embedding * centers
+    logits = logits.sum(2)  # num_planes x h*w
+
+    segmentation = segmentation[:num_planes, :, :].view(-1, h * w)  # mask each pixel w.r.t. segmentation
+
+    indices = segmentation.sum(dim=0).nonzero()
+
+    # Only take the dot product of the corresponding center
+    positive = logits * segmentation.to(torch.float)
+
+    positive = torch.index_select(positive, 1, indices.squeeze())
+    logits = torch.index_select(logits, 1, indices.squeeze())
+
+    # print(positive.shape) # num_planes x planar pixels
+    # print(logits.shape)
+
+    for i in range(positive.shape[1]):
+        if len(torch.unique(torch.abs(positive[:, i]))) != 2 & num_planes > 1:
+            print('FUCK')
+            print(torch.unique(torch.abs(positive[:, i])))
+        if torch.max(torch.abs(positive[:, i])).item() != torch.sum(torch.abs(positive[:, i])):
+            print('FUCK 2')
+            print(torch.max(torch.abs(positive[:, i])).item(), torch.sum(positive[:, i]), torch.abs(positive[:, i]))
+
+    exp_logits = torch.exp(logits)
+
+    # positive.sum(0) should only be adding 1 number
+    log_prob = positive.sum(0) - torch.log(exp_logits.sum(0, keepdim=True))
+
+    loss = - (temperature / base_temperature) * log_prob
+
+    # Debug print
+    # print(f"Logits shape: {logits.shape}, Positive shape: {positive.shape}")
+    # print(f"Sample logits: {logits[:5]}, Sample positive: {positive[:5]}")
+    print(f"Loss tensor: {loss}")
+
+    return torch.mean(loss), torch.mean(loss), torch.tensor(0)

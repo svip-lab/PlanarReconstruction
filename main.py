@@ -17,16 +17,19 @@ import torchvision.transforms as tf
 
 from models.baseline_same import Baseline as UNet
 from utils.loss import hinge_embedding_loss, surface_normal_loss, parameter_loss, \
-    class_balanced_cross_entropy_loss
+    class_balanced_cross_entropy_loss, contrastive_loss
 from utils.misc import AverageMeter, get_optimizer
 from utils.metric import eval_iou, eval_plane_prediction
 from utils.disp import tensor_to_image
 from utils.disp import colors_256 as colors
 from bin_mean_shift import Bin_Mean_Shift
 from modules import get_coordinate_map
-from utils.loss import Q_loss
+from utils.loss import Q_loss, semantic_loss
 from instance_parameter_loss import InstanceParameterLoss
 from match_segmentation import MatchSegmentation
+from transformers import DPTImageProcessor
+
+image_processor = DPTImageProcessor().from_pretrained('Intel/dpt-large-ade')
 
 ex = Experiment()
 
@@ -114,10 +117,13 @@ class PlaneDataset(data.Dataset):
 
         image = data['image']
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        
+        resized_image = cv2.resize(src=image, dsize=(256,256))
         image = Image.fromarray(image)
-
+        resized_image = Image.fromarray(resized_image)
         if self.transform is not None:
             image = self.transform(image)
+            resized_image = self.transform(resized_image)
 
         plane = data['plane']
         num_planes = data['num_planes'][0]
@@ -143,18 +149,23 @@ class PlaneDataset(data.Dataset):
         # since some depth is missing, we use plane to recover those depth following PlaneNet
         gt_depth = data['depth'].reshape(192, 256)
         depth = self.plane2depth(plane_parameters, num_planes, gt_segmentation, gt_depth).reshape(1, 192, 256)
+        gt_semantics = data['semantics']
+        gt_semantics = gt_semantics.astype(float)
+
 
         sample = {
+            'resized_image':resized_image,
             'image': image,
             'num_planes': num_planes,
             'instance': torch.ByteTensor(segmentation),
             # one for planar and zero for non-planar
-            'semantic': 1 - torch.FloatTensor(segmentation[num_planes, :, :]).unsqueeze(0),
+            'planar': 1 - torch.FloatTensor(segmentation[num_planes, :, :]).unsqueeze(0),
             'gt_seg': torch.LongTensor(gt_segmentation),
             'depth': torch.FloatTensor(depth),
             'plane_parameters': torch.FloatTensor(plane_parameters),
             'valid_region': torch.ByteTensor(valid_region.astype(np.uint8)).unsqueeze(0),
-            'plane_instance_parameter': torch.FloatTensor(plane_instance_parameter)
+            'plane_instance_parameter': torch.FloatTensor(plane_instance_parameter),
+            'gt_class': torch.FloatTensor(gt_semantics)
         }
 
         return sample
@@ -177,28 +188,31 @@ def load_dataset(subset, cfg):
 
     return loaders
 
-
 @ex.command
 def train(_run, _log):
     cfg = edict(_run.config)
-
+    checkpoint_dir = cfg.resume_dir 
+    # model_name = cfg.model.name
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
     random.seed(cfg.seed)
-
+    model_path = f"{cfg.resume_dir}/baseline_{cfg.model.arch}_semantic.pt"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    if not (_run._id is None):
-        checkpoint_dir = os.path.join(_run.observers[0].basedir, str(_run._id), 'checkpoints')
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir)
+    # print('Device:',device)
+    # print('*'*100)
+    # if not (_run._id is None):
+    #     checkpoint_dir = os.path.join(_run.observers[0].basedir, str(_run._id), 'checkpoints')
+    #     if not os.path.exists(checkpoint_dir):
+    #         os.makedirs(checkpoint_dir)
+    #     print(checkpoint_dir)
+    #     print('_-_'*80)
 
     # build network
     network = UNet(cfg.model)
-
-    if not (cfg.resume_dir == 'None'):
-        model_dict = torch.load(cfg.resume_dir, map_location=lambda storage, loc: storage)
-        network.load_state_dict(model_dict)
+    
+    # if not (cfg.resume_dir == 'None'):
+    #     model_dict = torch.load(cfg.resume_dir, map_location=lambda storage, loc: storage)
+    #     network.load_state_dict(model_dict)
 
     # load nets into gpu
     if cfg.num_gpus > 1 and torch.cuda.is_available():
@@ -207,13 +221,15 @@ def train(_run, _log):
 
     # set up optimizers
     optimizer = get_optimizer(network.parameters(), cfg.solver)
-
+    if device =='cpu':
+        cfg.dataset.num_workers=4
     # data loader
     data_loader = load_dataset('train', cfg.dataset)
 
     # save losses per epoch
     history = {'losses': [], 'losses_pull': [], 'losses_push': [],
-               'losses_binary': [], 'losses_depth': [], 'ioues': [], 'rmses': []}
+               'losses_binary': [], 'losses_depth': [], 'ioues': [], 'rmses': [],
+               'losses_semantic': []}
 
     network.train(not cfg.model.fix_bn)
 
@@ -235,39 +251,65 @@ def train(_run, _log):
         rmses = AverageMeter()
         instance_rmses = AverageMeter()
         mean_angles = AverageMeter()
+        losses_semantic = AverageMeter()
+
 
         tic = time.time()
         for iter, sample in enumerate(data_loader):
+            resized_image = sample['resized_image'].to(device)
             image = sample['image'].to(device)
             instance = sample['instance'].to(device)
-            semantic = sample['semantic'].to(device)
+            planar = sample['planar'].to(device)
             gt_depth = sample['depth'].to(device)
             gt_seg = sample['gt_seg'].to(device)
             gt_plane_parameters = sample['plane_parameters'].to(device)
             valid_region = sample['valid_region'].to(device)
             gt_plane_instance_parameter = sample['plane_instance_parameter'].to(device)
+            gt_class = sample['gt_class'].to(device)
 
+            x = image
             # forward pass
-            logit, embedding, _, _, param = network(image)
+            if cfg.model.arch=='dpt':
+                x = image_processor(resized_image, do_resize=False, return_tensors='pt')['pixel_values'].to(device)
+            
+            if cfg.model.semantic:
+                logit, embedding, _, _, param, semantic, combi = network(image)
+            else:
+                logit, embedding, _, _, param = network(image)
 
+            # print(semantic)
+            # print('00'*100)
+            # print(combi)
+            # print('1'*100)
+            tempc = embedding
+            if cfg.model.semantic:
+                tempc = combi
             segmentations, sample_segmentations, sample_params, centers, sample_probs, sample_gt_segs = \
-                bin_mean_shift(logit, embedding, param, gt_seg)
+                bin_mean_shift(logit, tempc, param, gt_seg)
 
             # calculate loss
-            loss, loss_pull, loss_push, loss_binary, loss_depth, loss_normal, loss_parameters, loss_pw, loss_instance \
-                = 0., 0., 0., 0., 0., 0., 0., 0., 0.
+            loss, loss_pull, loss_push, loss_binary, loss_depth, loss_normal, loss_parameters, loss_pw, loss_instance, loss_semantic \
+                = 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.
             batch_size = image.size(0)
             for i in range(batch_size):
-                _loss, _loss_pull, _loss_push = hinge_embedding_loss(embedding[i:i+1], sample['num_planes'][i:i+1],
-                                                                     instance[i:i+1], device)
+                _loss_semantic = 0
+                # Update with contrastive losee
+                # _loss, _loss_pull, _loss_push = hinge_embedding_loss(embedding[i:i+1], sample['num_planes'][i:i+1],
+                #                                                      instance[i:i+1], device)
 
-                _loss_binary = class_balanced_cross_entropy_loss(logit[i], semantic[i])
+                _loss, _loss_pull, _loss_push = contrastive_loss(embedding[i:i + 1], sample['num_planes'][i:i + 1],
+                                                                     instance[i:i + 1], device)
+
+                _loss_binary = class_balanced_cross_entropy_loss(logit[i], planar[i])
 
                 _loss_normal, mean_angle = surface_normal_loss(param[i:i+1], gt_plane_parameters[i:i+1],
                                                                valid_region[i:i+1])
 
                 _loss_L1 = parameter_loss(param[i:i + 1], gt_plane_parameters[i:i + 1], valid_region[i:i + 1])
                 _loss_depth, rmse, infered_depth = Q_loss(param[i:i+1], k_inv_dot_xy1, gt_depth[i:i+1])
+                   
+                if cfg.model.semantic:
+                     _loss_semantic = semantic_loss(semantic, gt_class, device)
 
                 if segmentations[i] is None:
                     continue
@@ -276,12 +318,13 @@ def train(_run, _log):
                     instance_parameter_loss(segmentations[i], sample_segmentations[i], sample_params[i],
                                             valid_region[i:i+1], gt_depth[i:i+1])
 
-                _loss += _loss_binary + _loss_depth + _loss_normal + _instance_loss + _loss_L1
+                _loss += _loss_binary + _loss_depth + _loss_normal + _instance_loss + _loss_L1 + _loss_semantic
+                
 
                 # planar segmentation iou
                 prob = torch.sigmoid(logit[i])
                 mask = (prob > 0.5).float().cpu().numpy()
-                iou = eval_iou(mask, semantic[i].cpu().numpy())
+                iou = eval_iou(mask, planar[i].cpu().numpy())
                 ioues.update(iou * 100)
                 instance_rmses.update(instance_abs_disntace.item())
                 rmses.update(rmse.item())
@@ -294,6 +337,7 @@ def train(_run, _log):
                 loss_depth += _loss_depth
                 loss_normal += _loss_normal
                 loss_instance += _instance_loss
+                loss_semantic += _loss_semantic
 
             loss /= batch_size
             loss_pull /= batch_size
@@ -302,6 +346,7 @@ def train(_run, _log):
             loss_depth /= batch_size
             loss_normal /= batch_size
             loss_instance /= batch_size
+            loss_semantic /= batch_size
 
             # Backward
             optimizer.zero_grad()
@@ -316,7 +361,7 @@ def train(_run, _log):
             losses_depth.update(loss_depth.item())
             losses_normal.update(loss_normal.item())
             losses_instance.update(loss_instance.item())
-
+            losses_semantic.update(loss_semantic.item())
             # update time
             batch_time.update(time.time() - tic)
             tic = time.time()
@@ -334,7 +379,9 @@ def train(_run, _log):
                           f"AN: {mean_angles.val:.4f} ({mean_angles.avg:.4f}) "
                           f"Depth: {losses_depth.val:.4f} ({losses_depth.avg:.4f}) "
                           f"INSDEPTH: {instance_rmses.val:.4f} ({instance_rmses.avg:.4f}) "
-                          f"RMSE: {rmses.val:.4f} ({rmses.avg:.4f}) ")
+                          f"RMSE: {rmses.val:.4f} ({rmses.avg:.4f}) "
+                          f"Semantic: {losses_semantic.val:.4f}({losses_semantic.avg:.4f}) ")
+
 
         _log.info(f"* epoch: {epoch:2d}\t"
                   f"Loss: {losses.avg:.6f}\t"
@@ -343,7 +390,8 @@ def train(_run, _log):
                   f"Binary: {losses_binary.avg:.6f}\t"
                   f"Depth: {losses_depth.avg:.6f}\t"
                   f"IoU: {ioues.avg:.2f}\t"
-                  f"RMSE: {rmses.avg:.4f}\t")
+                  f"RMSE: {rmses.avg:.4f}\t"
+                  f"Semantic: {losses_semantic.avg:.4f}\t")
 
         # save history
         history['losses'].append(losses.avg)
@@ -353,11 +401,15 @@ def train(_run, _log):
         history['losses_depth'].append(losses_depth.avg)
         history['ioues'].append(ioues.avg)
         history['rmses'].append(rmses.avg)
+        history['losses_semantic'].append(losses_semantic.avg)
+
 
         # save checkpoint
-        if not (_run._id is None):
-            torch.save(network.state_dict(), os.path.join(checkpoint_dir, f"network_epoch_{epoch}.pt"))
-            pickle.dump(history, open(os.path.join(checkpoint_dir, 'history.pkl'), 'wb'))
+        # if not (_run._id is None):
+    torch.save(network.state_dict(), model_path)
+    torch.save(embedding, 'embedding.pt')
+    torch.save(instance, 'instance.pt')
+    pickle.dump(history, open(os.path.join(checkpoint_dir, 'history_semantic.pkl'), 'wb'))
 
 
 @ex.command
@@ -370,17 +422,14 @@ def eval(_run, _log):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if not (_run._id is None):
-        checkpoint_dir = os.path.join('experiments', str(_run._id), 'checkpoints')
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir)
+    checkpoint_dir = cfg.resume_dir 
+    # model_name = cfg.model.name
 
     # build network
     network = UNet(cfg.model)
 
-    if not (cfg.resume_dir == 'None'):
-        model_dict = torch.load(cfg.resume_dir, map_location=lambda storage, loc: storage)
-        network.load_state_dict(model_dict)
+    model_dict = torch.load('/cluster/52/sarwath/snet/output/models/baseline_dpt.pt', map_location=lambda storage, loc: storage)
+    network.load_state_dict(model_dict)
 
     # load nets into gpu
     if cfg.num_gpus > 1 and torch.cuda.is_available():
@@ -401,27 +450,41 @@ def eval(_run, _log):
 
     with torch.no_grad():
         for iter, sample in enumerate(data_loader):
+            resized_image = sample['resized_image'].to(device)
             image = sample['image'].to(device)
             instance = sample['instance'].to(device)
             gt_seg = sample['gt_seg'].numpy()
-            semantic = sample['semantic'].to(device)
+            planar = sample['planar'].to(device)
             gt_depth = sample['depth'].to(device)
             # gt_plane_parameters = sample['plane_parameters'].to(device)
             valid_region = sample['valid_region'].to(device)
             gt_plane_num = sample['num_planes'].int()
             # gt_plane_instance_parameter = sample['plane_instance_parameter'].numpy()
-            
-            # forward pass
-            logit, embedding, _, _, param = network(image)
+            gt_class = sample['gt_class'].to(device)
 
+            
+            x = image
+            # forward pass
+            if cfg.model.arch=='dpt':
+                x = image_processor(resized_image, do_resize=False, return_tensors='pt')['pixel_values'].to(device)
+            
+            if cfg.model.semantic:
+                logit, embedding, _, _, param, semantic, combi = network(image)
+            else:
+                logit, embedding, _, _, param = network(image)
+
+            tempc = embedding
+            if cfg.model.semantic:
+                tempc = combi
             prob = torch.sigmoid(logit[0])
+            # image = cv2.resize(src=image, dsize=(192,256))
             
             # infer per pixel depth using per pixel plane parameter
             _, _, per_pixel_depth = Q_loss(param, k_inv_dot_xy1, gt_depth)
 
             # fast mean shift
             segmentation, sampled_segmentation, sample_param = bin_mean_shift.test_forward(
-                prob, embedding[0], param, mask_threshold=0.1)
+                prob, tempc[0], param, mask_threshold=0.1)
 
             # since GT plane segmentation is somewhat noise, the boundary of plane in GT is not well aligned, 
             # we thus use avg_pool_2d to smooth the segmentation results
@@ -461,7 +524,7 @@ def eval(_run, _log):
             # visualization and evaluation
             h, w = 192, 256
             image = tensor_to_image(image.cpu()[0])
-            semantic = semantic.cpu().numpy().reshape(h, w)
+            planar = planar.cpu().numpy().reshape(h, w)
             mask = (prob > 0.1).float().cpu().numpy().reshape(h, w)
             gt_seg = gt_seg.reshape(h, w)
             depth = instance_depth.cpu().numpy()[0, 0].reshape(h, w)
@@ -501,8 +564,8 @@ def eval(_run, _log):
             blend_pred = (pred_seg * 0.7 + image * 0.3).astype(np.uint8)
             blend_gt = (gt_seg_image * 0.7 + image * 0.3).astype(np.uint8)
 
-            semantic = cv2.resize((semantic * 255).astype(np.uint8), (w, h))
-            semantic = cv2.cvtColor(semantic, cv2.COLOR_GRAY2BGR)
+            planar = cv2.resize((planar * 255).astype(np.uint8), (w, h))
+            planar = cv2.cvtColor(planar, cv2.COLOR_GRAY2BGR)
 
             mask = cv2.resize((mask * 255).astype(np.uint8), (w, h))
             mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
@@ -522,7 +585,7 @@ def eval(_run, _log):
 
             image_1 = np.concatenate((image, pred_seg, gt_seg_image), axis=1)
             image_2 = np.concatenate((image, blend_pred, blend_gt), axis=1)
-            image_3 = np.concatenate((image, mask, semantic), axis=1)
+            image_3 = np.concatenate((image, mask, planar), axis=1)
             image_4 = np.concatenate((depth_diff, depth, gt_depth), axis=1)
             image = np.concatenate((image_1, image_2, image_3, image_4), axis=0)
 

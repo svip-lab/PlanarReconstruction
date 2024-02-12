@@ -1,6 +1,11 @@
 #ide
 .idea/
 
+# Data
+output_dir/
+datasets/
+
+
 # checkpoints
 experiments/
 
